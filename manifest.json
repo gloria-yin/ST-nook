@@ -6,6 +6,6 @@
   "js": "extension/index.js",
   "css": "extension/style.css",
   "author": "Gloria",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "homePage": "https://github.com/gloria-yin/ST-nook"
 }
