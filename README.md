@@ -1,6 +1,6 @@
 # 酒馆书屋 / ST Nook
 
-Gloria · v2.0.4
+Gloria · v2.0.5
 
 [打开在线阅读器](https://st-nook.pages.dev/)
 
@@ -61,4 +61,4 @@ git commit -m "Update ST Nook extension"
 git push origin main
 ```
 
-之后在酒馆扩展管理中更新插件，按 Ctrl+F5 刷新。添加书籍窗口应显示 `v2.0.5`。仅修改本地 HTML 而没有修改插件时，无需推送插件仓库。
+之后在酒馆扩展管理中更新插件，按 Ctrl+F5 刷新。添加书籍窗口应显示 `v2.0.7`。仅修改本地 HTML 而没有修改插件时，无需推送插件仓库。
