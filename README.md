@@ -1,6 +1,6 @@
 # 酒馆书屋 / ST Nook
 
-Gloria · v2.0.14
+Gloria · v2.0.15
 
 [打开在线阅读器](https://st-nook.pages.dev/)
 
