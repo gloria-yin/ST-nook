@@ -1,4 +1,4 @@
-const BUILD = 'ddf6898d810f1c63';
+const BUILD = '0da9b5f65adcb627';
 const ROOT = new URL('./', self.registration.scope);
 const INDEX = new URL('index.html', ROOT).href;
 const PREFIX = `st-nook-shell:${ROOT.pathname}:`;
