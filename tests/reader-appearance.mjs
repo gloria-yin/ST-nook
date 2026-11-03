@@ -16,7 +16,7 @@ const server = http.createServer((request, response) => {
  else {response.writeHead(404);response.end();}
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-const browser = spawn(process.env.EDGE_PATH || 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', ['--headless=new','--disable-gpu','--no-first-run','--no-default-browser-check','--remote-debugging-port=0',`--user-data-dir=${profile}`,'about:blank'], {windowsHide:true,stdio:'ignore'});
+const browser = spawn(process.env.EDGE_PATH || 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', ['--headless=new','--no-first-run','--no-default-browser-check','--remote-debugging-port=0',`--user-data-dir=${profile}`,'about:blank'], {windowsHide:true,stdio:'ignore'});
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 let socket;
 try {
@@ -126,6 +126,7 @@ try {
   await cdp('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
  }
  for(const action of ['reader-toc','reader-memory']) {
+  assert.equal(await evaluate(`document.querySelector('.reader-top [data-action="${action}"]').classList.contains('icon-btn')`),true);
   await tap(`.reader-top [data-action="${action}"]`);
   await until('!!document.querySelector(".modal")');await delay(300);
   const geometry=await evaluate(`(()=>{const m=document.querySelector('.modal'),b=m.querySelector('.modal-body'),r=m.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height,innerWidth,innerHeight,bodyWidth:b.clientWidth,bodyOverflow:b.scrollWidth,buttons:[...m.querySelectorAll('button')].filter(x=>{const s=x.getBoundingClientRect();return s.left<r.left||s.right>r.right;}).map(x=>x.textContent||x.getAttribute('aria-label'))};})()`);
@@ -200,8 +201,12 @@ try {
   for(const mode of ['day','night']) {
    await evaluate(`window.__appearanceTest.u.settings.frostMode='${mode}';window.__appearanceTest.jn()`);
    assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true);
-   assert.match(await evaluate('getComputedStyle(document.querySelector(".workspace")).backdropFilter'),/blur/);
+   assert.match(await evaluate('getComputedStyle(document.querySelector(".workspace"),"::before").backdropFilter'),/blur/);
    await screenshot(`shelf-${mobile==='small'?'small-mobile':mobile?'mobile':'desktop'}-${mode}`);
+   await evaluate('window.scrollTo(0,document.querySelector(".library-tabs").getBoundingClientRect().top+scrollY-24)');
+   assert.equal(await evaluate('document.querySelector(".topbar").getBoundingClientRect().top'),0);
+   await screenshot(`shelf-scrolled-${mobile==='small'?'small-mobile':mobile?'mobile':'desktop'}-${mode}`);
+   await evaluate('window.scrollTo(0,0)');
   }
  }
  await cdp('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
