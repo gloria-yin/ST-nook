@@ -1433,7 +1433,7 @@ function readerSwipeNavigation(book, chapter) {
   const version = readerSwipeChoice(book, entry.message, {useReaderSwipes: true}, entry.index), position = entry.versions.findIndex(item => item.key === version.key);
   return `<div class="reader-swipe-navigation" data-swipe-message="${entry.index}">
     <button type="button" data-action="reader-swipe-prev" ${position === 0 ? 'disabled' : ''}>${N('left')}上一版</button>
-    <div class="reader-swipe-center">${entries.length > 1 ? `<select id="reader-swipe-floor" aria-label="选择重 roll 楼层">${entries.map(item => `<option value="${item.index}" ${item === entry ? 'selected' : ''}>第 ${item.floor || item.index + 1} 楼 · ${S(item.message.name)}</option>`).join('')}</select>` : `<span>重 roll · 第 ${entry.floor || entry.index + 1} 楼</span>`}<output id="reader-swipe-number">${position + 1} / ${entry.versions.length}${version.current ? ' · 原正文' : ''}</output></div>
+    <div class="reader-swipe-center">${entries.length > 1 ? `<select id="reader-swipe-floor" aria-label="选择重 roll 楼层">${entries.map(item => `<option value="${item.index}" ${item === entry ? 'selected' : ''}>第 ${item.floor || item.index + 1} 楼 · ${S(item.message.name)}</option>`).join('')}</select>` : `<span>重 roll · 第 ${entry.floor || entry.index + 1} 楼</span>`}<button type="button" id="reader-swipe-number" class="reader-swipe-version-button" aria-label="输入重 roll 版本页码">${position + 1} / ${entry.versions.length}${version.current ? ' · 原正文' : ''}</button></div>
     <button type="button" data-action="reader-swipe-next" ${position === entry.versions.length - 1 ? 'disabled' : ''}>下一版${N('right')}</button>
   </div>`;
 }
@@ -1447,6 +1447,8 @@ function bindReaderSwipeControls() {
     const chapter = V(u.reader.book)[u.reader.index], row = g('.reader-swipe-navigation');
     if (row) {row.outerHTML = readerSwipeNavigation(u.reader.book, chapter);bindReaderSwipeControls();}
   };
+  const versionButton = g('#reader-swipe-number');
+  if (versionButton) versionButton.onclick = () => openReaderSwipeVersionPicker();
   const reader = g('.reader'), footer = g('.reader-bottom');
   if (reader && footer && g('.reader-swipe-navigation')) {
     reader.classList.add('has-swipe-navigation');
@@ -1484,13 +1486,37 @@ function applyReaderSwipeContext(book, chapter, context) {
   }
   return changed;
 }
+function openReaderSwipeVersionPicker() {
+  const reader = u.reader, row = g('.reader-swipe-navigation');
+  if (!reader || !row || reader.swipeBusy) return;
+  const book = reader.book, chapter = V(book)[reader.index], index = Number(row.dataset.swipeMessage), message = chapter?.messages[index];
+  if (!message) return;
+  const versions = readerAllSwipeVersions(message), active = readerSwipeChoice(book, message, {useReaderSwipes: true}, index), position = versions.findIndex(version => version.key === active.key);
+  if (versions.length < 2 || position < 0) return;
+  const modal = ee('跳转重 roll 版本', `<p class="modal-intro">输入要查看的版本页码（1–${versions.length}）。</p><label class="field"><span>版本页码</span><input id="reader-swipe-version-input" type="number" min="1" max="${versions.length}" step="1" inputmode="numeric" value="${position + 1}" aria-label="重 roll 版本页码"></label>`, [{label:'取消', onClick:B}, {label:'确定', primary:true, onClick:async root => {
+    const field = g('#reader-swipe-version-input', root), target = Number(field?.value);
+    if (!Number.isInteger(target) || target < 1 || target > versions.length) {F(`请输入 1 到 ${versions.length} 之间的整数`);field?.focus();field?.select();return;}
+    if (target === position + 1) {B();return;}
+    if (await switchReaderSwipeTo(target - 1)) B();
+  }}], {focus:'#reader-swipe-version-input'});
+  const field = g('#reader-swipe-version-input', modal);
+  field?.addEventListener('keydown', event => {if (event.key === 'Enter') g('.modal-footer .primary', modal)?.click();});
+}
 async function switchReaderSwipe(direction) {
+  const row = g('.reader-swipe-navigation');
+  if (!row) return;
+  const reader = u.reader, chapter = reader && V(reader.book)[reader.index], index = Number(row.dataset.swipeMessage), message = chapter?.messages[index];
+  if (!message) return;
+  const versions = readerAllSwipeVersions(message), active = readerSwipeChoice(reader.book, message, {useReaderSwipes: true}, index), position = versions.findIndex(version => version.key === active.key);
+  await switchReaderSwipeTo(position + direction);
+}
+async function switchReaderSwipeTo(targetPosition) {
   const reader = u.reader, row = g('.reader-swipe-navigation');
   if (!reader || !row || reader.swipeBusy) return;
   const book = reader.book, chapter = V(book)[reader.index], index = Number(row.dataset.swipeMessage), message = chapter.messages[index];
   const versions = readerAllSwipeVersions(message), active = readerSwipeChoice(book, message, {useReaderSwipes: true}, index);
-  const position = versions.findIndex(version => version.key === active.key), next = versions[position + direction];
-  if (!next) return;
+  const position = versions.findIndex(version => version.key === active.key), next = versions[targetPosition];
+  if (!next || targetPosition === position) return targetPosition === position;
   reader.swipeBusy = true;
   const previous = book.readerSwipeSelections?.[message.readerMessageId];
   try {
@@ -1502,10 +1528,12 @@ async function switchReaderSwipe(direction) {
     reader.swipeFloorIndex = index;
     reader.resumeOverride = u.progress[book.id]?.swipePositions?.[readerSwipeViewKey(chapter, readerChapterSwipeContext(book, chapter))] || {scroll: 0, ratio: 0, pageRatio: 0, readingMode: book.readingMode || 'scroll'};
     reader.readingSession = null;reader.readingAnchorResume = false;tt = true;await nt();
+    return true;
   } catch (error) {
     if (previous === undefined) delete book.readerSwipeSelections?.[message.readerMessageId];
     else book.readerSwipeSelections[message.readerMessageId] = previous;
     F(error.message || '切换版本失败，请重试');
+    return false;
   } finally {reader.swipeBusy = false;}
 }
 function readerSwipeRecordLabel(book, record) {
@@ -2513,7 +2541,7 @@ function hu() {
   return `<div class="library-header notes-library-heading"><div class="section-title"><h2>摘录与批注</h2><small>${notes.length} 条</small></div><div class="notes-controls"><select id="notes-book-filter" aria-label="按书籍筛选摘录"><option value="">全部书籍</option>${u.books.map(book => `<option value="${S(book.id)}" ${u.notesBook === book.id ? 'selected' : ''}>${S(book.title)}</option>`).join('')}</select>${G('memory-draw', '抽卡', 'star', 'small memory-draw-trigger', notes.length ? '' : 'disabled')}</div></div>
     <div class="notes-grid notes-collection">${notes.map(note => {
       const context = memoryContext(note.book, note);
-      return `<article class="note-card collection-note"><header class="collection-note-source">${memoryCover(note.book, 'collection-note-cover')}<div><strong>${S(note.book.title)}</strong><span>${S(context.chapterTitle)}</span></div></header><p class="note-quote">${S(note.text || '')}</p>${note.note ? `<div class="note-comment"><span class="note-comment-label">页边批注</span>${S(note.note)}</div>` : ''}<div class="note-footer"><time>${ct(note.created)} · 摘录</time><div class="row"><button data-action="note-open" data-id="${S(note.book.id)}" data-note="${S(note.id)}">原文</button><button data-action="note-annotate" data-id="${S(note.book.id)}" data-note="${S(note.id)}">${note.note?.trim() ? '修改批注' : '添加批注'}</button><button data-action="note-image" data-id="${S(note.book.id)}" data-note="${S(note.id)}">书摘</button>${ie('note-delete', '删除摘录', 'trash', `data-id="${S(note.book.id)}" data-note="${S(note.id)}"`)}</div></div></article>`;
+      return `<article class="note-card collection-note"><header class="collection-note-source">${memoryCover(note.book, 'collection-note-cover')}<div><strong>${S(note.book.title)}</strong><span>${S(context.chapterTitle)}</span></div></header><p class="note-quote">${S(note.text || '')}</p>${note.note ? `<div class="note-comment"><span class="note-comment-label" aria-label="批注"><span class="note-comment-wave" aria-hidden="true">__</span><svg class="icon note-comment-pen" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.67 19a2 2 0 0 0 1.416-.588l6.154-6.172a6 6 0 0 0-8.49-8.49L5.586 9.914A2 2 0 0 0 5 11.328V18a1 1 0 0 0 1 1z"/><path d="M16 8 2 22"/><path d="M17.5 15H9"/></svg></span>${S(note.note)}</div>` : ''}<div class="note-footer"><time>${ct(note.created)} · 摘录</time><div class="row"><button data-action="note-open" data-id="${S(note.book.id)}" data-note="${S(note.id)}">原文</button><button data-action="note-annotate" data-id="${S(note.book.id)}" data-note="${S(note.id)}">${note.note?.trim() ? '修改批注' : '添加批注'}</button><button data-action="note-image" data-id="${S(note.book.id)}" data-note="${S(note.id)}">书摘</button>${ie('note-delete', '删除摘录', 'trash', `data-id="${S(note.book.id)}" data-note="${S(note.id)}"`)}</div></div></article>`;
     }).join('') || `<div class="empty-state notes-empty">${N('quote')}<h3>这里会收好你留下的话</h3><p>进入书籍，选择文字留下划线或批注，再回来抽一张回忆卡。</p>${G('nav', '去书架', 'arrow', 'small', 'data-view="shelf"')}</div>`}</div>`;
 }
 
@@ -2894,7 +2922,7 @@ function vu(){if(hn){hn.prompt(),hn.userChoice.then(()=>{hn=null});return}ee("�
 .collection-note-source>div>span{font-size:10px;color:var(--muted);overflow-wrap:anywhere}
 .collection-note .note-quote{margin:21px 0;font-size:16px;line-height:2}
 .collection-note .note-comment{white-space:pre-wrap;border-top:0;background:var(--accent-soft);padding:13px 15px;border-radius:4px;color:var(--ink);font:12px/1.9 var(--reading-font)}
-.note-comment-label{display:block;font-size:9px;color:var(--accent);letter-spacing:1px;margin-bottom:5px}
+.note-comment-label{display:flex;align-items:center;gap:6px;height:19px;margin-bottom:5px;color:var(--accent);line-height:1}.note-comment-label>.note-comment-pen{width:19px;height:19px;flex:0 0 19px;stroke:currentColor;fill:none;stroke-width:1.35;stroke-linecap:round;stroke-linejoin:round;transform:rotate(-10deg)}.note-comment-wave{display:inline-block;color:transparent;font:15px/1 Georgia,"Times New Roman",serif;letter-spacing:1px;text-decoration-line:underline;text-decoration-style:wavy;text-decoration-color:var(--accent);text-decoration-thickness:1.35px;text-underline-offset:3px;transform:translateY(-1px);white-space:nowrap}
 .collection-note .note-footer{margin-top:17px;font-size:9px}
 .collection-note .note-footer time{color:var(--muted);white-space:nowrap}
 .notes-empty{grid-column:1/-1;padding:65px 15px}
@@ -3505,6 +3533,8 @@ html[data-theme=frost] .cover-preview-root.modal-backdrop{background:#141414;bac
 .reader-swipe-center{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0;font-size:10px;color:var(--muted)}
 .reader-swipe-center>span{white-space:nowrap}
 .reader-swipe-center output{white-space:nowrap;color:var(--accent);font:11px Georgia,serif}
+.reader-swipe-version-button{display:inline-flex;align-items:center;justify-content:center;min-width:48px;padding:2px 7px;border:1px solid transparent;border-radius:999px;background:transparent;color:var(--accent);font:11px Georgia,serif;white-space:nowrap;cursor:pointer}
+.reader-swipe-version-button:hover,.reader-swipe-version-button:focus-visible{border-color:var(--line);background:var(--accent-soft);outline:none}
 .reader-swipe-center select{max-width:100%;width:100%;padding:2px 6px;border:1px solid var(--line);border-radius:7px;color:var(--muted);background:var(--panel);font-size:11px}
 html[data-theme] .reader.has-swipe-navigation:not(.chrome-hidden) .reader-scroll{padding-bottom:calc(var(--reader-bottom-height,180px) + 26px)}
 html[data-theme=frost] .reader-swipe-center select{background:var(--frost-field);border-color:var(--frost-edge)}
