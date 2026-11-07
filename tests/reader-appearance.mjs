@@ -8,7 +8,7 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 
 const readerPath = fileURLToPath(new URL('../index.html', import.meta.url));
 const original = await fs.readFile(readerPath, 'utf8');
-const api = '\nwindow.__appearanceTest={u,$o,B,jn,lr,nt,_o,It,readerAppearance,initializeAppearance,appearanceStorage,addUploadedFont,deleteUploadedFont,loadUploadedFont,analyzeFrostImage,applyFrostPalette,frostContrast};\n';
+const api = '\nwindow.__appearanceTest={u,$o,B,jn,lr,nt,_o,It,readerAppearance,initializeAppearance,appearanceStorage,addUploadedFont,deleteUploadedFont,loadUploadedFont,analyzeFrostImage,applyFrostPalette,frostContrast,syncMobileChrome};\n';
 const html = original.replace(/(<script type="module">)([\s\S]*?)(<\/script>)/, (_, start, script, end) => start + script + api + end);
 const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'st-nook-appearance-'));
 const server = http.createServer((request, response) => {
@@ -47,6 +47,14 @@ try {
  await cdp('Page.navigate',{url:`http://127.0.0.1:${server.address().port}/`});
  await until('!!window.__appearanceTest');
  await evaluate('window.__appearanceTest.initializeAppearance()');
+ const chromeColors = await evaluate(`(()=>{const api=window.__appearanceTest,root=document.documentElement;api.u.settings.theme='paper';api.jn();const paper={color:document.querySelector('meta[name=\"theme-color\"]').content,bg:getComputedStyle(root).getPropertyValue('--bg').trim(),apple:document.querySelector('meta[name=\"apple-mobile-web-app-status-bar-style\"]').content};api.u.settings.theme='night';api.jn();const night={color:document.querySelector('meta[name=\"theme-color\"]').content,bg:getComputedStyle(root).getPropertyValue('--bg').trim(),apple:document.querySelector('meta[name=\"apple-mobile-web-app-status-bar-style\"]').content};api.u.settings.theme='frost';api.u.settings.frostMode='night';api.applyFrostPalette({hue:215,saturation:.68});api.jn();return {paper,night,frost:{color:document.querySelector('meta[name=\"theme-color\"]').content,apple:document.querySelector('meta[name=\"apple-mobile-web-app-status-bar-style\"]').content},capable:document.querySelector('meta[name=\"mobile-web-app-capable\"]').content};})()`);
+ assert.equal(chromeColors.capable,'yes');
+ assert.equal(chromeColors.paper.color,chromeColors.paper.bg);
+ assert.equal(chromeColors.paper.apple,'default');
+ assert.equal(chromeColors.night.color,chromeColors.night.bg);
+ assert.equal(chromeColors.night.apple,'black');
+ assert.equal(chromeColors.frost.apple,'black');
+ await evaluate(`window.__appearanceTest.u.settings.theme='paper';window.__appearanceTest.u.settings.frostMode='day';window.__appearanceTest.jn()`);
  await evaluate('window.__appearanceTest.$o()');
  assert.equal(await evaluate('document.querySelectorAll("[data-theme-choice]").length'),7);
  assert.equal(await evaluate('[...document.querySelectorAll("[data-theme-choice]")].at(-1).dataset.themeChoice'),'frost');
